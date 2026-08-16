@@ -82,10 +82,11 @@ public final class PopupDialog {
         }
 
         String configStr = configDir != null ? configDir.toString() : "";
+        String base64Payload = java.util.Base64.getEncoder().encodeToString(payload.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
         boolean launched = launchStandaloneProcess(
-                "prelaunch_threat",
-                payload.toString(),
+                "prelaunch_threat_b64",
+                base64Payload,
                 configStr
         );
 

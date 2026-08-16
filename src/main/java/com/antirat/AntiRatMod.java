@@ -52,6 +52,8 @@ public final class AntiRatMod implements ClientModInitializer {
             return thread;
         });
         threatHandler = new ThreatHandler(config, resolver, quarantineManager, logger, new GameAlerter(), executor);
+        com.antirat.core.FilesystemAccountGuard.install(config, threatHandler);
+        com.antirat.core.ProcessExecutionSandbox.install(config, threatHandler);
         if (config.debug) {
             logger.log("AntiRAT core initialized early, game version " + loader.getRawGameVersion());
         }

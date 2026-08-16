@@ -40,31 +40,33 @@ public final class AntiRatPreLaunch implements PreLaunchEntrypoint {
         }
 
         java.util.Set<Path> allJarPaths = new java.util.HashSet<>();
-        Path modsDir = loader.getGameDir().resolve("mods");
+        Path modsDir = loader.getGameDir().resolve("mods").toAbsolutePath().normalize();
         if (java.nio.file.Files.isDirectory(modsDir)) {
             try (java.nio.file.DirectoryStream<Path> s = java.nio.file.Files.newDirectoryStream(modsDir, "*.jar")) {
-                s.forEach(allJarPaths::add);
+                for (Path p : s) {
+                    if (java.nio.file.Files.isRegularFile(p)) {
+                        allJarPaths.add(p.toAbsolutePath().normalize());
+                    }
+                }
             } catch (Exception ignored) {}
         }
-        Path altModsDir = Path.of("mods");
-        if (java.nio.file.Files.isDirectory(altModsDir)) {
+        Path altModsDir = Path.of("mods").toAbsolutePath().normalize();
+        if (java.nio.file.Files.isDirectory(altModsDir) && !altModsDir.equals(modsDir)) {
             try (java.nio.file.DirectoryStream<Path> s = java.nio.file.Files.newDirectoryStream(altModsDir, "*.jar")) {
-                s.forEach(allJarPaths::add);
-            } catch (Exception ignored) {}
-        }
-        for (net.fabricmc.loader.api.ModContainer mod : loader.getAllMods()) {
-            try {
-                if (mod.getOrigin() != null && mod.getOrigin().getPaths() != null) {
-                    for (Path p : mod.getOrigin().getPaths()) {
-                        if (p != null && p.toString().endsWith(".jar") && java.nio.file.Files.isRegularFile(p)) {
-                            allJarPaths.add(p);
-                        }
+                for (Path p : s) {
+                    if (java.nio.file.Files.isRegularFile(p)) {
+                        allJarPaths.add(p.toAbsolutePath().normalize());
                     }
                 }
             } catch (Exception ignored) {}
         }
 
         List<ScanReport> reports = allJarPaths.parallelStream()
+                .filter(p -> {
+                    String fileName = p.getFileName().toString();
+                    String baseName = fileName.endsWith(".jar") ? fileName.substring(0, fileName.length() - 4) : fileName;
+                    return !config.isWhitelisted(fileName) && !config.isWhitelisted(baseName);
+                })
                 .map(JarScanner::scanJar)
                 .filter(ScanReport::hasThreats)
                 .toList();

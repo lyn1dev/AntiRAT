@@ -303,8 +303,9 @@ public final class JarScanner {
             }
         }
 
-        // Whitelist standard system native libraries bundled in Fabric/LWJGL jars
-        if (lowerEntry.contains("gpu-detect") || lowerEntry.contains("libglfw") || lowerEntry.contains("openal")) {
+        // Whitelist standard system native libraries and Kotlin debug probes bundled in Fabric/LWJGL jars
+        if (lowerEntry.contains("gpu-detect") || lowerEntry.contains("libglfw") || lowerEntry.contains("openal")
+                || lowerEntry.contains("debugprobeskt") || lowerEntry.contains("kotlin") || lowerEntry.contains("jetbrains")) {
             return false;
         }
 

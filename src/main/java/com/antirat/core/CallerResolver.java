@@ -33,6 +33,82 @@ public final class CallerResolver {
             "java.lang.invoke."
     );
 
+    public static final Set<String> DEFAULT_HARDCODED_WHITELIST = Set.of(
+            // Platform & Core loaders
+            "minecraft",
+            "fabricloader",
+            "fabric-loader",
+            "fabric",
+            "fabric-api",
+            "fabric-language-kotlin",
+            "antirat",
+            "java",
+
+            // User's Verified Modpack Mods
+            "asynclogger",
+            "asyncparticles",
+            "authme",
+            "better_hypixel_chat",
+            "bobby",
+            "btrbz",
+            "catharsis",
+            "cloth-config",
+            "compacting",
+            "controlling",
+            "crash_assistant",
+            "cwb",
+            "debugify",
+            "enhancedsoundcontrol",
+            "enhanced_chat",
+            "enhanced_storage",
+            "entityculling",
+            "fastipping",
+            "feesh",
+            "ferritecore",
+            "forcecloseworldloadingscreen",
+            "gnetum",
+            "immediatelyfast",
+            "inventorybuttons",
+            "iris",
+            "ixeris",
+            "languagereload",
+            "lithium",
+            "marketguard",
+            "modernfix",
+            "modernwarpmenu",
+            "modmenu",
+            "moreculling",
+            "netprodis",
+            "nochatreports",
+            "nochatrestrictions",
+            "obe",
+            "odin",
+            "packcore",
+            "packetfixer",
+            "placeholder-api",
+            "rrv",
+            "rpc",
+            "sbo",
+            "scaleme",
+            "scamscreener",
+            "searchables",
+            "skinlayers3d",
+            "skyblocker",
+            "skyblockpv",
+            "skyblock_enhancements",
+            "skyhanni",
+            "skyocean",
+            "skyrecipes",
+            "sodium-extra",
+            "sodium",
+            "sspb",
+            "stella",
+            "stfu",
+            "uilib",
+            "yet_another_config_lib_v3",
+            "zoomify"
+    );
+
     private final ModIndex modIndex;
     private final Set<String> whitelistedModIds;
 
@@ -95,7 +171,7 @@ public final class CallerResolver {
         }
         String id = modId.get();
         String origin = modIndex.findOrigin(id).map(java.nio.file.Path::toString).orElse("");
-        if (whitelistedModIds.contains(id)) {
+        if (DEFAULT_HARDCODED_WHITELIST.contains(id.toLowerCase(java.util.Locale.ROOT)) || whitelistedModIds.contains(id)) {
             return new Resolution(Trust.TRUSTED, id, origin);
         }
         return new Resolution(Trust.SUSPICIOUS, id, origin);

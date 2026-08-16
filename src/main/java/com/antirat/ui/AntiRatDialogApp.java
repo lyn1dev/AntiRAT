@@ -56,6 +56,15 @@ public final class AntiRatDialogApp {
             String accessPoint = args.length >= 6 ? args[5] : "User#getAccessToken";
 
             showTokenAccessWindow(modId, fileName, originPathStr, configDirStr, accessPoint);
+        } else if ("prelaunch_threat_b64".equalsIgnoreCase(mode) && args.length >= 3) {
+            try {
+                byte[] decoded = java.util.Base64.getDecoder().decode(args[1]);
+                String payload = new String(decoded, java.nio.charset.StandardCharsets.UTF_8);
+                String configDirStr = args[2];
+                showPreLaunchThreatWindow(payload, configDirStr);
+            } catch (Exception e) {
+                showPreLaunchThreatWindow(args[1], args[2]);
+            }
         } else if ("prelaunch_threat".equalsIgnoreCase(mode) && args.length >= 3) {
             String payload = args[1];
             String configDirStr = args[2];
@@ -84,29 +93,29 @@ public final class AntiRatDialogApp {
             frame.setIconImage(iconImg);
         }
 
-        JPanel mainPanel = new JPanel(new BorderLayout(14, 14));
-        mainPanel.setBorder(new EmptyBorder(16, 20, 16, 20));
+        JPanel mainPanel = new JPanel(new BorderLayout(16, 16));
+        mainPanel.setBorder(new EmptyBorder(20, 24, 20, 24));
 
         // Header with AntiRAT logo
-        JPanel headerPanel = new JPanel(new BorderLayout(12, 0));
+        JPanel headerPanel = new JPanel(new BorderLayout(16, 0));
         if (iconImg != null) {
-            Image scaled = iconImg.getScaledInstance(48, 48, Image.SCALE_SMOOTH);
+            Image scaled = iconImg.getScaledInstance(56, 56, Image.SCALE_SMOOTH);
             JLabel iconLabel = new JLabel(new ImageIcon(scaled));
             headerPanel.add(iconLabel, BorderLayout.WEST);
         }
 
-        String html = "<html><body style='width: 440px; font-family: sans-serif;'>"
-                + "<h2 style='color: #c0392b; margin: 0 0 6px 0;'>AntiRAT: Token Access Intercepted</h2>"
+        String html = "<html><body style='width: 580px; font-family: sans-serif; font-size: 13px; line-height: 1.4;'>"
+                + "<h2 style='color: #c0392b; margin: 0 0 8px 0; font-size: 18px;'>AntiRAT: Token Access Intercepted</h2>"
                 + "<p style='margin: 0;'>A mod attempted to read your private Minecraft session token via <b>" + escapeHtml(accessPoint) + "</b>:</p>"
-                + "<div style='background-color: #f4f4f4; border-left: 4px solid #c0392b; padding: 10px; margin: 8px 0;'>"
+                + "<div style='background-color: #f4f4f4; border-left: 4px solid #c0392b; padding: 12px; margin: 10px 0; font-size: 13px;'>"
                 + "<b>Mod ID:</b> <code>" + escapeHtml(modId) + "</code><br>"
                 + "<b>Mod File:</b> <code>" + escapeHtml(fileName) + "</code>"
                 + "</div>"
-                + "<p style='margin-bottom: 4px;'><b>Security Guidance:</b></p>"
-                + "<p style='margin: 2px 0;'>• <b>If you are sure you got this mod from a verified site such as Modrinth or CurseForge</b> (e.g. SkyBlockPv, AuthMe) and trust its developers, you can press <b>Whitelist</b>.</p>"
-                + "<p style='margin: 2px 0;'>• <i>You can relaunch your game after whitelisting the mod.</i></p>"
-                + "<p style='margin: 2px 0;'>• <b>Otherwise, if you downloaded it from Discord or an untrusted site</b>, delete it immediately to protect your account.</p>"
-                + "<p style='color: #27ae60; font-size: 11px; margin-top: 6px;'><i>AntiRAT blocked this request and returned an empty string to protect your account.</i></p>"
+                + "<p style='margin: 4px 0 2px 0;'><b>Security Guidance:</b></p>"
+                + "<p style='margin: 3px 0;'>• <b>If you are sure you got this mod from a verified site such as Modrinth or CurseForge</b> (e.g. SkyBlockPv, AuthMe) and trust its developers, press <b>Whitelist</b>.</p>"
+                + "<p style='margin: 3px 0;'>• <i>You can relaunch your game after whitelisting the mod.</i></p>"
+                + "<p style='margin: 3px 0;'>• <b>Otherwise, if you downloaded it from Discord or an untrusted site</b>, delete it immediately to protect your account.</p>"
+                + "<p style='color: #27ae60; font-size: 12px; margin-top: 8px;'><i>✓ AntiRAT blocked this request and returned an empty string to protect your account.</i></p>"
                 + "</body></html>";
 
         JLabel label = new JLabel(html);
@@ -114,7 +123,7 @@ public final class AntiRatDialogApp {
         mainPanel.add(headerPanel, BorderLayout.CENTER);
 
         // Buttons with high contrast, legible styling
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
         JButton whitelistBtn = createStyledButton("Whitelist Mod", new Color(225, 240, 255), new Color(24, 90, 157));
         JButton deleteBtn = createStyledButton("Delete Mod File", new Color(255, 235, 235), new Color(180, 40, 30));
         JButton closeBtn = createStyledButton("Keep Blocked / Close", new Color(245, 245, 245), new Color(50, 50, 50));
@@ -133,9 +142,16 @@ public final class AntiRatDialogApp {
         });
 
         deleteBtn.addActionListener(e -> {
+            int choice = JOptionPane.showConfirmDialog(frame,
+                    "Are you sure you want to permanently delete '" + fileName + "'?",
+                    "Confirm Mod Deletion", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (choice != JOptionPane.YES_OPTION) {
+                return;
+            }
+
             boolean deleted = false;
             try {
-                Path jarPath = Path.of(originPathStr);
+                Path jarPath = originPathStr != null && !originPathStr.isEmpty() ? Path.of(originPathStr) : Path.of("mods", fileName);
                 deleted = Files.deleteIfExists(jarPath);
                 if (!deleted) {
                     jarPath.toFile().deleteOnExit();
@@ -166,6 +182,7 @@ public final class AntiRatDialogApp {
 
         frame.getContentPane().add(mainPanel);
         frame.pack();
+        frame.setMinimumSize(new Dimension(680, 420));
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
     }
@@ -195,24 +212,24 @@ public final class AntiRatDialogApp {
             frame.setIconImage(iconImg);
         }
 
-        JPanel mainPanel = new JPanel(new BorderLayout(12, 12));
-        mainPanel.setBorder(new EmptyBorder(16, 20, 16, 20));
+        JPanel mainPanel = new JPanel(new BorderLayout(14, 14));
+        mainPanel.setBorder(new EmptyBorder(18, 24, 18, 24));
 
-        JPanel headerPanel = new JPanel(new BorderLayout(12, 0));
+        JPanel headerPanel = new JPanel(new BorderLayout(16, 0));
         if (iconImg != null) {
-            Image scaled = iconImg.getScaledInstance(48, 48, Image.SCALE_SMOOTH);
+            Image scaled = iconImg.getScaledInstance(56, 56, Image.SCALE_SMOOTH);
             JLabel iconLabel = new JLabel(new ImageIcon(scaled));
             headerPanel.add(iconLabel, BorderLayout.WEST);
         }
 
         String titleText = count > 1 ? count + " Malicious Mods Detected!" : "Malicious Mod Detected!";
-        String html = "<html><body style='width: 520px; font-family: sans-serif;'>"
-                + "<h2 style='color: #d32f2f; margin: 0 0 4px 0;'>AntiRAT: " + titleText + "</h2>"
-                + "<p style='margin: 2px 0;'>AntiRAT static scanner detected token-stealer or dropper signatures in your mods folder.</p>"
+        String html = "<html><body style='width: 720px; font-family: sans-serif; font-size: 13px; line-height: 1.35;'>"
+                + "<h2 style='color: #d32f2f; margin: 0 0 4px 0; font-size: 19px;'>AntiRAT: " + titleText + "</h2>"
+                + "<p style='margin: 2px 0;'>AntiRAT static scanner detected token-stealer, dropper, or remote C2 signatures in your mods folder.</p>"
                 + "<p style='margin: 4px 0;'><b>Security Guidance:</b><br>"
                 + "• If you are sure you got a mod from a verified site such as Modrinth or CurseForge, press <b>Whitelist</b>.<br>"
                 + "• <i>You can relaunch your game after whitelisting the mod(s).</i><br>"
-                + "• Otherwise, press <b>Delete</b> to remove the file and protect your Microsoft account.</p>"
+                + "• Otherwise, press <b>Delete</b> to permanently remove the file and protect your Microsoft account.</p>"
                 + "</body></html>";
 
         headerPanel.add(new JLabel(html), BorderLayout.CENTER);
@@ -226,19 +243,19 @@ public final class AntiRatDialogApp {
         List<Runnable> bulkDeleteActions = new ArrayList<>();
 
         for (ModThreatItem item : items) {
-            JPanel card = new JPanel(new BorderLayout(8, 8));
+            JPanel card = new JPanel(new BorderLayout(12, 8));
             card.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(new Color(220, 220, 220), 1, true),
-                    new EmptyBorder(8, 12, 8, 12)
+                    BorderFactory.createLineBorder(new Color(210, 210, 210), 1, true),
+                    new EmptyBorder(10, 16, 10, 16)
             ));
-            card.setBackground(new Color(250, 250, 250));
+            card.setBackground(new Color(252, 252, 252));
 
             // Details
             StringBuilder findingHtml = new StringBuilder();
-            findingHtml.append("<html><body style='width: 320px; font-family: sans-serif;'>");
-            findingHtml.append("<b>📁 ").append(escapeHtml(item.fileName)).append("</b><br>");
+            findingHtml.append("<html><body style='width: 460px; font-family: sans-serif;'>");
+            findingHtml.append("<b style='font-size: 14px; color: #111111;'>📁 ").append(escapeHtml(item.fileName)).append("</b><br>");
             for (String f : item.findings) {
-                findingHtml.append("<span style='color: #c0392b; font-size: 11px;'>• ").append(escapeHtml(f)).append("</span><br>");
+                findingHtml.append("<span style='color: #c0392b; font-size: 12px;'>• ").append(escapeHtml(f)).append("</span><br>");
             }
             findingHtml.append("</body></html>");
 
@@ -246,26 +263,31 @@ public final class AntiRatDialogApp {
             card.add(infoLabel, BorderLayout.CENTER);
 
             // Row action buttons
-            JPanel rowBtnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+            JPanel rowBtnPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
             rowBtnPanel.setOpaque(false);
 
             JLabel statusLabel = new JLabel("Pending");
-            statusLabel.setFont(new Font("SansSerif", Font.ITALIC, 11));
-            statusLabel.setForeground(new Color(120, 120, 120));
+            statusLabel.setFont(new Font("SansSerif", Font.ITALIC, 12));
+            statusLabel.setForeground(new Color(110, 110, 110));
 
             JButton rowWhitelistBtn = createStyledButton("Whitelist", new Color(225, 240, 255), new Color(24, 90, 157));
             JButton rowDeleteBtn = createStyledButton("Delete", new Color(255, 235, 235), new Color(180, 40, 30));
 
             Runnable doWhitelist = () -> {
                 try {
-                    Path configDir = Path.of(configDirStr);
+                    Path configDir = (configDirStr != null && !configDirStr.isEmpty()) ? Path.of(configDirStr) : Path.of("config");
                     String modId = item.fileName.replace(".jar", "");
+                    Config.addWhitelist(configDir, item.fileName);
                     Config.addWhitelist(configDir, modId);
                     statusLabel.setText("✓ Whitelisted");
                     statusLabel.setForeground(new Color(24, 90, 157));
                     rowWhitelistBtn.setEnabled(false);
                     rowDeleteBtn.setEnabled(false);
-                } catch (Exception ignored) {}
+                    card.revalidate();
+                    card.repaint();
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
             };
 
             Runnable doDelete = () -> {
@@ -277,6 +299,11 @@ public final class AntiRatDialogApp {
                         File f = path.toFile();
                         deleted = f.delete();
                     }
+                    if (!deleted && Files.exists(path)) {
+                        Path disabled = path.resolveSibling(path.getFileName().toString() + ".disabled");
+                        Files.move(path, disabled);
+                        deleted = true;
+                    }
                 } catch (Exception ignored) {}
 
                 if (deleted) {
@@ -284,8 +311,10 @@ public final class AntiRatDialogApp {
                     statusLabel.setForeground(new Color(180, 40, 30));
                     rowWhitelistBtn.setEnabled(false);
                     rowDeleteBtn.setEnabled(false);
+                    card.revalidate();
+                    card.repaint();
                 } else {
-                    statusLabel.setText("Delete failed (locked)");
+                    statusLabel.setText("Delete failed");
                 }
             };
 
@@ -316,12 +345,13 @@ public final class AntiRatDialogApp {
         }
 
         JScrollPane scrollPane = new JScrollPane(cardsListPanel);
-        scrollPane.setPreferredSize(new Dimension(540, Math.min(260, count * 95 + 20)));
+        scrollPane.setPreferredSize(new Dimension(780, Math.min(380, count * 110 + 30)));
         scrollPane.setBorder(null);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         mainPanel.add(scrollPane, BorderLayout.CENTER);
 
         // Bottom action buttons
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
         if (count > 1) {
             JButton whitelistAllBtn = createStyledButton("Whitelist All", new Color(225, 240, 255), new Color(24, 90, 157));
             JButton deleteAllBtn = createStyledButton("Delete All", new Color(255, 235, 235), new Color(180, 40, 30));
@@ -352,6 +382,7 @@ public final class AntiRatDialogApp {
 
         frame.getContentPane().add(mainPanel);
         frame.pack();
+        frame.setMinimumSize(new Dimension(840, 560));
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
     }
@@ -377,11 +408,15 @@ public final class AntiRatDialogApp {
 
     private static JButton createStyledButton(String text, Color background, Color textColor) {
         JButton btn = new JButton(text);
-        btn.setFont(new Font("SansSerif", Font.BOLD, 12));
+        btn.setFont(new Font("SansSerif", Font.BOLD, 13));
         btn.setForeground(textColor);
         btn.setBackground(background);
         btn.setFocusPainted(false);
-        btn.setPreferredSize(new Dimension(btn.getPreferredSize().width + 12, 28));
+        btn.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(190, 190, 190), 1, true),
+                new EmptyBorder(7, 16, 7, 16)
+        ));
+        btn.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
         return btn;
     }
 
