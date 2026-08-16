@@ -25,6 +25,9 @@ public final class Config {
     @SerializedName("scanner")
     public Scanner scanner = new Scanner();
 
+    @SerializedName("egressFilter")
+    public EgressFilter egressFilter = new EgressFilter();
+
     @SerializedName("quarantine")
     public Quarantine quarantine = new Quarantine();
 
@@ -38,6 +41,11 @@ public final class Config {
     public boolean debug = false;
 
     public static final class Scanner {
+        @SerializedName("enabled")
+        public boolean enabled = true;
+    }
+
+    public static final class EgressFilter {
         @SerializedName("enabled")
         public boolean enabled = true;
     }
@@ -81,6 +89,9 @@ public final class Config {
                 }
                 if (parsed.scanner == null) {
                     parsed.scanner = new Scanner();
+                }
+                if (parsed.egressFilter == null) {
+                    parsed.egressFilter = new EgressFilter();
                 }
                 if (parsed.quarantine == null) {
                     parsed.quarantine = new Quarantine();

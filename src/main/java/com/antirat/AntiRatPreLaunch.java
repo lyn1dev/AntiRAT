@@ -32,6 +32,9 @@ public final class AntiRatPreLaunch implements PreLaunchEntrypoint {
         // Initialize ThreatHandler early so mixins are protected from start
         AntiRatMod.initEarly();
 
+        // Install JVM-wide network egress filter
+        com.antirat.network.NetworkEgressFilter.install(config, AntiRatMod.getThreatHandler());
+
         if (!config.enabled || !config.scanner.enabled) {
             return;
         }
