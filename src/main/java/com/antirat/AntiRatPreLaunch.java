@@ -29,6 +29,9 @@ public final class AntiRatPreLaunch implements PreLaunchEntrypoint {
             logger.log("AntiRAT preLaunch initialized, loader version " + loader.getRawGameVersion());
         }
 
+        // Initialize ThreatHandler early so mixins are protected from start
+        AntiRatMod.initEarly();
+
         if (!config.enabled || !config.scanner.enabled) {
             return;
         }

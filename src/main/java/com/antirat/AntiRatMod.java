@@ -17,12 +17,30 @@ public final class AntiRatMod implements ClientModInitializer {
 
     private static volatile ThreatHandler threatHandler;
 
+    /**
+     * Retrieves the global ThreatHandler instance. If called early (e.g. during preLaunch
+     * or early mixins), it self-initializes immediately to prevent null bypasses.
+     */
     public static ThreatHandler getThreatHandler() {
-        return threatHandler;
+        ThreatHandler local = threatHandler;
+        if (local == null) {
+            synchronized (AntiRatMod.class) {
+                if (threatHandler == null) {
+                    initEarly();
+                }
+                local = threatHandler;
+            }
+        }
+        return local;
     }
 
-    @Override
-    public void onInitializeClient() {
+    /**
+     * Initializes core threat protection early in the JVM lifecycle.
+     */
+    public static synchronized void initEarly() {
+        if (threatHandler != null) {
+            return;
+        }
         FabricLoader loader = FabricLoader.getInstance();
         Config config = Config.load(loader.getConfigDir());
         RatLogger logger = new RatLogger(loader.getGameDir());
@@ -35,7 +53,12 @@ public final class AntiRatMod implements ClientModInitializer {
         });
         threatHandler = new ThreatHandler(config, resolver, quarantineManager, logger, new GameAlerter(), executor);
         if (config.debug) {
-            logger.log("AntiRAT initialized, game version " + loader.getRawGameVersion());
+            logger.log("AntiRAT core initialized early, game version " + loader.getRawGameVersion());
         }
+    }
+
+    @Override
+    public void onInitializeClient() {
+        initEarly();
     }
 }

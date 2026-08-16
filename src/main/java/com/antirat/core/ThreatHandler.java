@@ -24,14 +24,22 @@ public final class ThreatHandler {
     private final Set<String> handledMods = ConcurrentHashMap.newKeySet();
     private final Map<String, Integer> hitCounts = new ConcurrentHashMap<>();
 
+    private final Runnable panicAction;
+
     public ThreatHandler(Config config, CallerResolver resolver, QuarantineManager quarantineManager,
                          RatLogger logger, Alerter alerter, Executor executor) {
+        this(config, resolver, quarantineManager, logger, alerter, executor, () -> Runtime.getRuntime().halt(1));
+    }
+
+    public ThreatHandler(Config config, CallerResolver resolver, QuarantineManager quarantineManager,
+                         RatLogger logger, Alerter alerter, Executor executor, Runnable panicAction) {
         this.config = config;
         this.resolver = resolver;
         this.quarantineManager = quarantineManager;
         this.logger = logger;
         this.alerter = alerter;
         this.executor = executor;
+        this.panicAction = panicAction != null ? panicAction : () -> Runtime.getRuntime().halt(1);
     }
 
     /**
@@ -53,6 +61,7 @@ public final class ThreatHandler {
         int hits = hitCounts.merge(modId, 1, Integer::sum);
         boolean firstHit = handledMods.add(modId);
         String origin = resolution.origin();
+        String fileName = fileNameOf(modId, origin);
 
         if (config.log.enabled) {
             StringBuilder message = new StringBuilder();
@@ -60,15 +69,30 @@ public final class ThreatHandler {
                     .append(" by mod '").append(modId)
                     .append("' origin=").append(origin)
                     .append(" hits=").append(hits);
-            if (config.debug) {
-                for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
-                    message.append(System.lineSeparator()).append("  at ").append(element);
-                }
+            for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
+                message.append(System.lineSeparator()).append("  at ").append(element);
             }
             logger.log(message.toString());
         }
 
-        String fileName = fileNameOf(modId, origin);
+        if (config.panicOnThreat) {
+            StringBuilder panicAlert = new StringBuilder();
+            panicAlert.append(System.lineSeparator())
+                    .append("================================================================================").append(System.lineSeparator())
+                    .append(" [AntiRAT] [CRITICAL THREAT DETECTED] SESSION THEFT ATTEMPT BLOCKED!           ").append(System.lineSeparator())
+                    .append("================================================================================").append(System.lineSeparator())
+                    .append(" Mod ID:       '").append(modId).append("' (").append(fileName).append(")").append(System.lineSeparator())
+                    .append(" Access Point: ").append(accessPoint).append(System.lineSeparator())
+                    .append(" Origin:       ").append(origin).append(System.lineSeparator())
+                    .append(" Action:       Halting JVM process immediately to prevent data exfiltration.").append(System.lineSeparator())
+                    .append("================================================================================").append(System.lineSeparator());
+            System.err.println(panicAlert);
+
+            // Execute emergency panic termination
+            panicAction.run();
+            return true;
+        }
+
         if (firstHit) {
             String consoleAlert = "[AntiRAT] [ALERT] Mod '" + modId + "' (" + fileName + ") attempted to access session token via " + accessPoint + ". Returned empty value.";
             System.err.println(consoleAlert);
