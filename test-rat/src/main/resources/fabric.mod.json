@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "test-rat",
+  "version": "${version}",
+  "name": "Test RAT (malware simulator)",
+  "description": "DO NOT INSTALL ON A REAL ACCOUNT. Simulates a session-token stealing mod for AntiRAT testing.",
+  "authors": ["antirat"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.testrat.TestRatMod"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": ">=26.1.2 <=26.2"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "antirat",
+  "version": "${version}",
+  "name": "AntiRAT",
+  "description": "Intercepts session-token reads (User#getAccessToken / User#getSessionId) by non-whitelisted mods and logs alerts. Supports Minecraft 26.1.2 and 26.2.",
+  "authors": ["lyn1, github.com/lyn1dev"],
+  "license": "MIT",
+  "icon": "assets/antirat/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.antirat.AntiRatMod"]
+  },
+  "mixins": ["antirat.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": ">=26.1.2 <=26.2"
+  }
+}

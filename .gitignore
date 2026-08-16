@@ -1,0 +1,16 @@
+# OS / build outputs
+.gradle/
+build/
+run/
+
+# IDE
+.idea/
+*.iml
+local.properties
+
+# Runtime
+config/
+*.log
+
+# Sandbox-only tooling (stealer simulator, web console, captured payloads)
+/samples/
