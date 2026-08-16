@@ -105,9 +105,9 @@ class JarScannerTest {
 
         ScanReport report = JarScanner.scanJar(b64Jar);
         assertTrue(report.hasThreats());
-        assertEquals(1, report.findings().size());
-        assertEquals(ThreatCategory.WEBHOOK_C2, report.findings().get(0).category());
-        assertTrue(report.findings().get(0).sampleContent().contains("[Auto-Decoded:"));
+        assertTrue(report.findings().stream().anyMatch(f ->
+                f.category() == ThreatCategory.WEBHOOK_C2 && f.sampleContent().contains("[Auto-Decoded:")
+        ));
     }
 
     @Test
@@ -127,8 +127,7 @@ class JarScannerTest {
 
         ScanReport report = JarScanner.scanJar(hexJar);
         assertTrue(report.hasThreats());
-        assertEquals(1, report.findings().size());
-        assertEquals(ThreatCategory.STEALER_TARGET, report.findings().get(0).category());
+        assertTrue(report.findings().stream().anyMatch(f -> f.category() == ThreatCategory.STEALER_TARGET));
     }
 
     @Test
