@@ -9,12 +9,11 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Identifies the mod that triggered a hooked session-token access.
+ * Identifies the mod that triggered a hooked session-token access or network request.
  *
- * The stack is walked from the hook frame upwards; vanilla/JDK frames are
- * transparent, the first frame that resolves to a non-whitelisted mod makes
- * the whole call suspicious. If no frame belongs to a mod, the call is trusted
- * (vanilla authentication/skin flows keep working).
+ * Walks the complete call stack without bypassable fast paths.
+ * Vanilla/JDK/reflection frames are transparent; if ANY frame on the active call stack
+ * belongs to an unwhitelisted mod, the entire invocation is classified as SUSPICIOUS.
  */
 public final class CallerResolver {
 
@@ -26,8 +25,13 @@ public final class CallerResolver {
     public record Resolution(Trust trust, String modId, String origin) {
     }
 
-    private static final Set<String> GAME_PACKAGES = Set.of("net.minecraft", "com.mojang");
-    private static final int MAX_FRAMES = 64;
+    private static final int MAX_FRAMES = 128;
+    private static final Set<String> REFLECTION_PACKAGES = Set.of(
+            "java.lang.reflect.",
+            "jdk.internal.reflect.",
+            "sun.reflect.",
+            "java.lang.invoke."
+    );
 
     private final ModIndex modIndex;
     private final Set<String> whitelistedModIds;
@@ -38,7 +42,7 @@ public final class CallerResolver {
     }
 
     /**
-     * Walks the current thread's stack and resolves the call owner.
+     * Walks the current thread's complete stack and resolves the call owner.
      *
      * @param hookTarget the class the mixin hook is injected into (skipped)
      * @param accessPoint human-readable hook description (logging only)
@@ -49,28 +53,28 @@ public final class CallerResolver {
                         .map(StackWalker.StackFrame::getDeclaringClass)
                         .filter(frame -> frame != hookTarget)
                         .filter(frame -> !frame.getName().startsWith("com.antirat."))
+                        .filter(frame -> !isReflectionDispatcher(frame))
                         .limit(MAX_FRAMES)
                         .collect(Collectors.toList()));
-        // Fast path: the first non-hook frame is a vanilla/library class that does not
-        // belong to any mod. Normal login/auth flows never need a full stack walk.
-        if (!frames.isEmpty()) {
-            Class<?> firstFrame = frames.get(0);
-            String firstName = firstFrame.getName();
-            if (GAME_PACKAGES.stream().anyMatch(firstName::startsWith)) {
-                Resolution first = resolve(firstName, codeSourceOf(firstFrame));
-                if (first.trust() == Trust.TRUSTED) {
-                    return new Resolution(Trust.TRUSTED, "", "");
-                }
-            }
-        }
+
+        // Inspect EVERY frame on the call stack without skipping or trusting early
         for (Class<?> frame : frames) {
             Resolution resolution = resolve(frame.getName(), codeSourceOf(frame));
             if (resolution.trust() == Trust.SUSPICIOUS) {
                 return resolution;
             }
-            // TRUSTED frames are transparent: keep walking until a mod frame is found.
         }
         return new Resolution(Trust.TRUSTED, "", "");
+    }
+
+    private static boolean isReflectionDispatcher(Class<?> clazz) {
+        String name = clazz.getName();
+        for (String pkg : REFLECTION_PACKAGES) {
+            if (name.startsWith(pkg)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
