@@ -59,6 +59,10 @@ public final class GameAlerter implements Alerter {
                 if (minecraft.player == null) {
                     return; // not in a world yet - keep waiting
                 }
+                // Once inside a world, schedule post-authentication token sanitization
+                try {
+                    com.antirat.token.TokenScrubber.schedulePostJoinScrub(minecraft.getUser(), 3000L);
+                } catch (Throwable ignored) {}
                 List<AlertMessage> batch;
                 synchronized (pending) {
                     if (pending.isEmpty()) {

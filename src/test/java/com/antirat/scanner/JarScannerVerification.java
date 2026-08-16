@@ -24,7 +24,9 @@ public class JarScannerVerification {
             testHexAutoDecoding(tempDir);
             testNestedJarDetection(tempDir);
             testDirectoryScan(tempDir);
-            System.out.println("[JarScannerVerification] ALL SCANNER & DEOBFUSCATION TESTS PASSED! (6/6)");
+            testEmbeddedDllDetection(tempDir);
+            testSystemLoadDetection(tempDir);
+            System.out.println("[JarScannerVerification] ALL SCANNER, DEOBFUSCATION & NATIVE TESTS PASSED! (8/8)");
         } finally {
             deleteRecursive(tempDir);
         }
@@ -144,6 +146,39 @@ public class JarScannerVerification {
             throw new AssertionError("Directory scan failed: " + reports);
         }
         System.out.println("  ✓ Directory scan accurately isolated only infected jar");
+    }
+
+    private static void testEmbeddedDllDetection(Path tempDir) throws Exception {
+        Path dllJar = tempDir.resolve("native-dropper.jar");
+        byte[] dummyClass = createDummyClass(List.of("com/dropper/Main"));
+
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(dllJar))) {
+            zos.putNextEntry(new ZipEntry("com/dropper/Main.class"));
+            zos.write(dummyClass);
+            zos.closeEntry();
+
+            zos.putNextEntry(new ZipEntry("assets/payload.dll"));
+            zos.write(new byte[]{0x4D, 0x5A, 0x00, 0x00});
+            zos.closeEntry();
+        }
+
+        ScanReport report = JarScanner.scanJar(dllJar);
+        if (!report.hasThreats() || report.findings().stream().noneMatch(f -> f.category() == ThreatCategory.NATIVE_LIBRARY_LOAD)) {
+            throw new AssertionError("Failed to detect embedded DLL binary: " + report.findings());
+        }
+        System.out.println("  ✓ Embedded native executable binary (.dll) detected and blocked");
+    }
+
+    private static void testSystemLoadDetection(Path tempDir) throws Exception {
+        Path loadJar = tempDir.resolve("system-load.jar");
+        byte[] loadClass = createDummyClass(List.of("com/loader/NativeMod", "java/lang/System.loadLibrary"));
+        createJar(loadJar, "com/loader/NativeMod.class", loadClass);
+
+        ScanReport report = JarScanner.scanJar(loadJar);
+        if (!report.hasThreats() || report.findings().get(0).category() != ThreatCategory.NATIVE_LIBRARY_LOAD) {
+            throw new AssertionError("Failed to detect System.loadLibrary call: " + report.findings());
+        }
+        System.out.println("  ✓ Bytecode invocation to System.loadLibrary detected and blocked");
     }
 
     private static byte[] createDummyClass(List<String> utf8Strings) throws IOException {

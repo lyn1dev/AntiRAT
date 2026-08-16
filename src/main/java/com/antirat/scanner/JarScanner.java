@@ -30,6 +30,19 @@ public final class JarScanner {
     private static final Pattern BASE64_PATTERN = Pattern.compile("[A-Za-z0-9+/=]{16,}|[A-Za-z0-9_-]{16,}");
     private static final Pattern HEX_PATTERN = Pattern.compile("^(?:[0-9a-fA-F]{2}){8,}$");
 
+    private static final Set<String> EXECUTABLE_EXTENSIONS = Set.of(
+            ".dll", ".exe", ".so", ".dylib", ".vbs", ".bat", ".cmd", ".ps1", ".scr", ".pif"
+    );
+
+    private static boolean isExecutableEntry(String entryName) {
+        for (String ext : EXECUTABLE_EXTENSIONS) {
+            if (entryName.endsWith(ext)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static final List<Signature> SIGNATURES = List.of(
             // Webhooks & Exfiltration
             new Signature(ThreatCategory.WEBHOOK_C2, "discord.com/api/webhooks"),
@@ -55,7 +68,13 @@ public final class JarScanner {
             // Process Droppers
             new Signature(ThreatCategory.PROCESS_EXECUTION, "java/lang/ProcessBuilder"),
             new Signature(ThreatCategory.PROCESS_EXECUTION, "powershell -"),
-            new Signature(ThreatCategory.PROCESS_EXECUTION, "cmd.exe /c")
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "cmd.exe /c"),
+
+            // Native Library & DLL Loaders
+            new Signature(ThreatCategory.NATIVE_LIBRARY_LOAD, "java/lang/System.load"),
+            new Signature(ThreatCategory.NATIVE_LIBRARY_LOAD, "java/lang/System.loadLibrary"),
+            new Signature(ThreatCategory.NATIVE_LIBRARY_LOAD, "java/lang/Runtime.load"),
+            new Signature(ThreatCategory.NATIVE_LIBRARY_LOAD, "java/lang/Runtime.loadLibrary")
     );
 
     private record Signature(ThreatCategory category, String pattern) {
@@ -108,6 +127,20 @@ public final class JarScanner {
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
                 String entryName = entry.getName();
+                String lowerEntry = entryName.toLowerCase(Locale.ROOT);
+
+                if (isExecutableEntry(lowerEntry)) {
+                    String dedupKey = fileName + "|NATIVE|" + entryName;
+                    if (deduplication.add(dedupKey)) {
+                        findings.add(new ScanFinding(
+                                entryName,
+                                ThreatCategory.NATIVE_LIBRARY_LOAD,
+                                "Embedded Native / Binary Executable",
+                                "Found embedded executable binary inside jar: " + entryName
+                        ));
+                    }
+                }
+
                 if (entryName.endsWith(".class")) {
                     // Ignore AntiRAT's own classes
                     if (entryName.startsWith("com/antirat/")) {
@@ -121,6 +154,18 @@ public final class JarScanner {
                         ZipEntry nestedEntry;
                         while ((nestedEntry = nestedZis.getNextEntry()) != null) {
                             String nestedName = nestedEntry.getName();
+                            String lowerNested = nestedName.toLowerCase(Locale.ROOT);
+                            if (isExecutableEntry(lowerNested)) {
+                                String dedupKey = fileName + "|NATIVE|" + nestedName;
+                                if (deduplication.add(dedupKey)) {
+                                    findings.add(new ScanFinding(
+                                            entryName + "!" + nestedName,
+                                            ThreatCategory.NATIVE_LIBRARY_LOAD,
+                                            "Embedded Native / Binary Executable",
+                                            "Found embedded executable binary inside nested jar: " + nestedName
+                                    ));
+                                }
+                            }
                             if (nestedName.endsWith(".class") && !nestedName.startsWith("com/antirat/")) {
                                 List<String> nestedStrings = ClassConstantPoolReader.extractUtf8Strings(nestedZis);
                                 analyzeClassStrings(entryName + "!" + nestedName, nestedStrings, findings, deduplication);

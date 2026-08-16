@@ -160,4 +160,36 @@ class JarScannerTest {
         assertTrue(categories.contains(ThreatCategory.WEBHOOK_C2));
         assertTrue(categories.contains(ThreatCategory.PROCESS_EXECUTION));
     }
+
+    @Test
+    void detectsEmbeddedDllBinary() throws Exception {
+        Path dllJar = tempDir.resolve("native-dropper.jar");
+        byte[] dummyClass = createDummyClassWithStrings(List.of("com/dropper/Main"));
+
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(dllJar))) {
+            zos.putNextEntry(new ZipEntry("com/dropper/Main.class"));
+            zos.write(dummyClass);
+            zos.closeEntry();
+
+            zos.putNextEntry(new ZipEntry("assets/payload.dll"));
+            zos.write(new byte[]{0x4D, 0x5A, 0x00, 0x00}); // MZ header
+            zos.closeEntry();
+        }
+
+        ScanReport report = JarScanner.scanJar(dllJar);
+        assertTrue(report.hasThreats());
+        List<ThreatCategory> categories = report.findings().stream().map(ScanFinding::category).toList();
+        assertTrue(categories.contains(ThreatCategory.NATIVE_LIBRARY_LOAD));
+    }
+
+    @Test
+    void detectsSystemLoadLibraryCall() throws Exception {
+        Path loadJar = tempDir.resolve("system-load.jar");
+        byte[] loadClass = createDummyClassWithStrings(List.of("com/loader/NativeMod", "java/lang/System.loadLibrary"));
+        createJar(loadJar, "com/loader/NativeMod.class", loadClass);
+
+        ScanReport report = JarScanner.scanJar(loadJar);
+        assertTrue(report.hasThreats());
+        assertEquals(ThreatCategory.NATIVE_LIBRARY_LOAD, report.findings().get(0).category());
+    }
 }
