@@ -75,6 +75,12 @@ public final class ThreatHandler {
             logger.log(message.toString());
         }
 
+        Path originPath = (origin != null && !origin.isEmpty()) ? Path.of(origin) : null;
+        Path configDir = null;
+        try {
+            configDir = net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir();
+        } catch (Throwable ignored) {}
+
         if (config.panicOnThreat) {
             StringBuilder panicAlert = new StringBuilder();
             panicAlert.append(System.lineSeparator())
@@ -88,6 +94,9 @@ public final class ThreatHandler {
                     .append("================================================================================").append(System.lineSeparator());
             System.err.println(panicAlert);
 
+            // Show native interactive alert UI
+            com.antirat.alert.PopupDialog.showTokenAccessDecision(modId, fileName, originPath, configDir, accessPoint);
+
             // Execute emergency panic termination
             panicAction.run();
             return true;
@@ -96,6 +105,10 @@ public final class ThreatHandler {
         if (firstHit) {
             String consoleAlert = "[AntiRAT] [ALERT] Mod '" + modId + "' (" + fileName + ") attempted to access session token via " + accessPoint + ". Returned empty value.";
             System.err.println(consoleAlert);
+
+            // Show native interactive alert UI pop-up with Whitelist / Delete options
+            com.antirat.alert.PopupDialog.showTokenAccessDecision(modId, fileName, originPath, configDir, accessPoint);
+
             if (config.alert.title || config.alert.chat) {
                 alerter.alert(new Alerter.AlertMessage(
                         "AntiRAT: Session token access blocked",

@@ -57,6 +57,29 @@ class ThreatHandlerTest {
     }
 
     @Test
+    void neutralizeReturnsTrueWithoutPanicWhenPanicDisabled() {
+        Config config = new Config();
+        config.panicOnThreat = false;
+        CallerResolver resolver = new CallerResolver(new FakeModIndex(), List.of());
+        QuarantineManager quarantine = new QuarantineManager(tempDir);
+        RatLogger logger = new RatLogger(tempDir);
+        AtomicBoolean panicked = new AtomicBoolean(false);
+
+        ThreatHandler handler = new ThreatHandler(
+                config,
+                resolver,
+                quarantine,
+                logger,
+                msg -> {},
+                Runnable::run,
+                () -> panicked.set(true)
+        );
+
+        assertFalse(handler.checkAndRespond(ThreatHandlerTest.class, "User#getAccessToken"));
+        assertFalse(panicked.get());
+    }
+
+    @Test
     void disabledConfigBypassesAllChecks() {
         Config config = new Config();
         config.enabled = false;

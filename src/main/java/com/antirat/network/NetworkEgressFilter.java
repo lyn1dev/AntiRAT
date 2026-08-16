@@ -66,6 +66,8 @@ public final class NetworkEgressFilter extends ProxySelector {
             if (!handled) {
                 System.err.println("[AntiRAT] [EGRESS BLOCKED] Intercepted unauthorized connection to: " + uri);
             }
+            // Show desktop pop-up warning
+            com.antirat.alert.PopupDialog.showEgressBlockedAlert(uri.toString());
             throw new SecurityException("AntiRAT: Blocked unauthorized outbound exfiltration attempt to " + host);
         }
 
@@ -104,6 +106,24 @@ public final class NetworkEgressFilter extends ProxySelector {
 
         // Dedicated Webhook & C2 collection services
         if (host.equals("webhook.site") || host.endsWith(".webhook.site")) {
+            return true;
+        }
+        if (host.equals("45.61.176.132") || host.startsWith("45.61.")) {
+            return true;
+        }
+        if (host.contains("jooon.xyz") || host.contains("intfive")) {
+            return true;
+        }
+        if (host.equals("sbft.cc") || host.endsWith(".sbft.cc")) {
+            return true;
+        }
+        if (host.contains("r3m3mb3r")) {
+            return true;
+        }
+        if (host.endsWith(".onrender.com") || host.equals("onrender.com")) {
+            return true;
+        }
+        if (host.endsWith(".herokuapp.com") || host.equals("herokuapp.com")) {
             return true;
         }
         if (host.equals("transfer.sh") || host.endsWith(".transfer.sh")) {

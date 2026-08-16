@@ -17,8 +17,9 @@ public class ThreatHandlerVerification {
 
         try {
             testPanicTriggeredOnSuspiciousCall(tempDir);
+            testNeutralizeWithoutPanicWhenPanicDisabled(tempDir);
             testNoPanicWhenDisabled(tempDir);
-            System.out.println("[ThreatHandlerVerification] ALL THREAT HANDLER TESTS PASSED! (2/2)");
+            System.out.println("[ThreatHandlerVerification] ALL THREAT HANDLER TESTS PASSED! (3/3)");
         } finally {
             deleteRecursive(tempDir);
         }
@@ -63,6 +64,47 @@ public class ThreatHandlerVerification {
             throw new AssertionError("Expected panicAction to be invoked on suspicious call when panicOnThreat is true");
         }
         System.out.println("  ✓ Panic halt triggered immediately on suspicious call from external mod frame");
+    }
+
+    private static void testNeutralizeWithoutPanicWhenPanicDisabled(Path tempDir) {
+        Config config = new Config();
+        config.panicOnThreat = false;
+
+        ModIndex evilIndex = new ModIndex() {
+            @Override
+            public Optional<String> findModId(URL codeSource) {
+                return Optional.of("skyblockpv");
+            }
+
+            @Override
+            public Optional<Path> findOrigin(String modId) {
+                return Optional.of(Path.of("C:/mods/skyblockpv.jar"));
+            }
+        };
+
+        CallerResolver resolver = new CallerResolver(evilIndex, List.of());
+        QuarantineManager quarantine = new QuarantineManager(tempDir);
+        RatLogger logger = new RatLogger(tempDir);
+        AtomicBoolean panicked = new AtomicBoolean(false);
+
+        ThreatHandler handler = new ThreatHandler(
+                config,
+                resolver,
+                quarantine,
+                logger,
+                msg -> {},
+                Runnable::run,
+                () -> panicked.set(true)
+        );
+
+        boolean responded = FakeCaller.callGetAccessToken(handler);
+        if (!responded) {
+            throw new AssertionError("Expected checkAndRespond to return true to neutralize token");
+        }
+        if (panicked.get()) {
+            throw new AssertionError("Did not expect panic when panicOnThreat is false");
+        }
+        System.out.println("  ✓ Soft neutralization without crashing confirmed when panicOnThreat is false");
     }
 
     private static void testNoPanicWhenDisabled(Path tempDir) {

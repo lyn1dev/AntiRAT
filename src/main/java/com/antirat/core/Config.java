@@ -20,7 +20,7 @@ public final class Config {
     public List<String> whitelistModIds = new ArrayList<>();
 
     @SerializedName("panicOnThreat")
-    public boolean panicOnThreat = true;
+    public boolean panicOnThreat = false;
 
     @SerializedName("scanner")
     public Scanner scanner = new Scanner();
@@ -108,5 +108,26 @@ public final class Config {
             // fall through to defaults
         }
         return new Config();
+    }
+
+    public static synchronized void save(Path configDir, Config config) {
+        Path file = configDir.resolve("antirat.json");
+        try {
+            Files.createDirectories(configDir);
+            Files.writeString(file, GSON.toJson(config));
+        } catch (IOException ignored) {
+            // best effort
+        }
+    }
+
+    public static synchronized void addWhitelist(Path configDir, String modId) {
+        if (modId == null || modId.isBlank()) {
+            return;
+        }
+        Config config = load(configDir);
+        if (!config.whitelistModIds.contains(modId)) {
+            config.whitelistModIds.add(modId);
+            save(configDir, config);
+        }
     }
 }

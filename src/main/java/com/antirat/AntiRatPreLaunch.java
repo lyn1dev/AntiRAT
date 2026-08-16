@@ -39,8 +39,35 @@ public final class AntiRatPreLaunch implements PreLaunchEntrypoint {
             return;
         }
 
+        java.util.Set<Path> allJarPaths = new java.util.HashSet<>();
         Path modsDir = loader.getGameDir().resolve("mods");
-        List<ScanReport> reports = JarScanner.scanModsDirectory(modsDir);
+        if (java.nio.file.Files.isDirectory(modsDir)) {
+            try (java.nio.file.DirectoryStream<Path> s = java.nio.file.Files.newDirectoryStream(modsDir, "*.jar")) {
+                s.forEach(allJarPaths::add);
+            } catch (Exception ignored) {}
+        }
+        Path altModsDir = Path.of("mods");
+        if (java.nio.file.Files.isDirectory(altModsDir)) {
+            try (java.nio.file.DirectoryStream<Path> s = java.nio.file.Files.newDirectoryStream(altModsDir, "*.jar")) {
+                s.forEach(allJarPaths::add);
+            } catch (Exception ignored) {}
+        }
+        for (net.fabricmc.loader.api.ModContainer mod : loader.getAllMods()) {
+            try {
+                if (mod.getOrigin() != null && mod.getOrigin().getPaths() != null) {
+                    for (Path p : mod.getOrigin().getPaths()) {
+                        if (p != null && p.toString().endsWith(".jar") && java.nio.file.Files.isRegularFile(p)) {
+                            allJarPaths.add(p);
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        List<ScanReport> reports = allJarPaths.parallelStream()
+                .map(JarScanner::scanJar)
+                .filter(ScanReport::hasThreats)
+                .toList();
 
         if (!reports.isEmpty()) {
             StringBuilder alert = new StringBuilder();
@@ -61,19 +88,16 @@ public final class AntiRatPreLaunch implements PreLaunchEntrypoint {
                 }
             }
 
-            alert.append(System.lineSeparator())
+            alert.append(" [AntiRAT] Launch HALTED immediately to prevent compromise.").append(System.lineSeparator())
+                 .append(" Please remove the offending mod file(s) before starting Minecraft.").append(System.lineSeparator())
                  .append("================================================================================").append(System.lineSeparator());
+            System.err.println(alert);
 
-            if (config.panicOnThreat) {
-                alert.append(" [AntiRAT] Launch HALTED immediately to prevent compromise.").append(System.lineSeparator())
-                     .append(" Please remove the offending mod file(s) before starting Minecraft.").append(System.lineSeparator())
-                     .append("================================================================================").append(System.lineSeparator());
-                System.err.println(alert);
-                // Immediately halt the JVM process without running shutdown hooks
-                Runtime.getRuntime().halt(1);
-            } else {
-                System.err.println(alert);
-            }
+            // Display interactive native dialog with Whitelist & Delete options
+            com.antirat.alert.PopupDialog.showPreLaunchThreatDecision(reports, loader.getConfigDir(), modsDir);
+
+            // Immediately halt the JVM process without running shutdown hooks
+            Runtime.getRuntime().halt(1);
         }
     }
 }
