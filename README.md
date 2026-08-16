@@ -1,6 +1,6 @@
 # AntiRAT 🛡️
 
-> 🤖 **Notice:** This README was written by an AI assistant based directly on the source code, reverse-engineered malware datasets, and runtime behavioral security implementations contained in this repository.
+> 🤖 **Notice:** This README was written by an AI assistant based directly on the source code, reverse-engineered malware datasets, and runtime behavioral security implementations contained in this repository. The code and logic in this repository have been implemented and/or directed by human hands.
 
 ---
 
