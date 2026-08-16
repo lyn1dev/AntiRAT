@@ -14,34 +14,62 @@ import java.util.zip.ZipOutputStream;
 public class JarScannerVerification {
 
     public static void main(String[] args) throws Exception {
-        System.out.println("[JarScannerVerification] Running Rank 1 Base64/Hex Auto-Decoding & Entropy tests...");
+        System.out.println("[JarScannerVerification] Running zero-false-positive JarScanner tests...");
         Path tempDir = Files.createTempDirectory("antirat-scanner-test");
 
         try {
-            testCleanMod(tempDir);
+            testCleanModWithGenerics(tempDir);
+            testLegitimateFlatLafNatives(tempDir);
             testWebhookAndStealerDetection(tempDir);
             testBase64AutoDecoding(tempDir);
             testHexAutoDecoding(tempDir);
             testNestedJarDetection(tempDir);
             testDirectoryScan(tempDir);
-            testEmbeddedDllDetection(tempDir);
-            testSystemLoadDetection(tempDir);
-            System.out.println("[JarScannerVerification] ALL SCANNER, DEOBFUSCATION & NATIVE TESTS PASSED! (8/8)");
+            testSuspiciousEmbeddedDllDetection(tempDir);
+            System.out.println("[JarScannerVerification] ALL SCANNER TESTS PASSED WITH ZERO FALSE POSITIVES! (8/8)");
         } finally {
             deleteRecursive(tempDir);
         }
     }
 
-    private static void testCleanMod(Path tempDir) throws Exception {
+    private static void testCleanModWithGenerics(Path tempDir) throws Exception {
         Path cleanJar = tempDir.resolve("clean-mod.jar");
-        byte[] cleanClass = createDummyClass(List.of("com/example/CleanMod", "java/lang/Object", "<init>", "()V"));
+        byte[] cleanClass = createDummyClass(List.of(
+                "com/example/CleanMod",
+                "java/lang/Object",
+                "<T:Ljava/lang/Object;>(Lcom/lmax/disruptor/DataProvider<TT;>;Lcom/lmax/disruptor/EventHandler<TT;>;)V",
+                "https?://(www\\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b([-a-zA-Z0-9(...)])",
+                "<init>",
+                "()V"
+        ));
         createJar(cleanJar, "com/example/CleanMod.class", cleanClass);
 
         ScanReport report = JarScanner.scanJar(cleanJar);
         if (report.hasThreats() || !report.findings().isEmpty()) {
             throw new AssertionError("Clean mod falsely flagged: " + report.findings());
         }
-        System.out.println("  ✓ Clean mod passed without false positives");
+        System.out.println("  ✓ Clean mod with complex generic signatures passed without false positives");
+    }
+
+    private static void testLegitimateFlatLafNatives(Path tempDir) throws Exception {
+        Path flatLafJar = tempDir.resolve("flatlaf-mod.jar");
+        byte[] dummyClass = createDummyClass(List.of("com/formdev/flatlaf/FlatLaf"));
+
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(flatLafJar))) {
+            zos.putNextEntry(new ZipEntry("com/formdev/flatlaf/FlatLaf.class"));
+            zos.write(dummyClass);
+            zos.closeEntry();
+
+            zos.putNextEntry(new ZipEntry("com/formdev/flatlaf/natives/flatlaf-windows-x86_64.dll"));
+            zos.write(new byte[]{0x4D, 0x5A, 0x00, 0x00});
+            zos.closeEntry();
+        }
+
+        ScanReport report = JarScanner.scanJar(flatLafJar);
+        if (report.hasThreats() || !report.findings().isEmpty()) {
+            throw new AssertionError("Legitimate FlatLaf library falsely flagged: " + report.findings());
+        }
+        System.out.println("  ✓ Legitimate vendor native libraries (FlatLaf/LWJGL/JNA) passed cleanly");
     }
 
     private static void testWebhookAndStealerDetection(Path tempDir) throws Exception {
@@ -50,7 +78,7 @@ public class JarScannerVerification {
                 "com/evil/Stealer",
                 "https://discord.com/api/webhooks/1234567890/token-here",
                 "C:/Users/victim/AppData/Roaming/.minecraft/launcher_accounts.json",
-                "java/lang/ProcessBuilder"
+                "powershell -executionpolicy bypass"
         ));
         createJar(evilJar, "com/evil/Stealer.class", evilClass);
 
@@ -65,7 +93,7 @@ public class JarScannerVerification {
             !categories.contains(ThreatCategory.PROCESS_EXECUTION)) {
             throw new AssertionError("Missing expected threat categories: " + categories);
         }
-        System.out.println("  ✓ Direct webhook, stealer target, and ProcessBuilder detected");
+        System.out.println("  ✓ Direct webhook, stealer target, and dropper command detected");
     }
 
     private static void testBase64AutoDecoding(Path tempDir) throws Exception {
@@ -148,7 +176,7 @@ public class JarScannerVerification {
         System.out.println("  ✓ Directory scan accurately isolated only infected jar");
     }
 
-    private static void testEmbeddedDllDetection(Path tempDir) throws Exception {
+    private static void testSuspiciousEmbeddedDllDetection(Path tempDir) throws Exception {
         Path dllJar = tempDir.resolve("native-dropper.jar");
         byte[] dummyClass = createDummyClass(List.of("com/dropper/Main"));
 
@@ -166,19 +194,7 @@ public class JarScannerVerification {
         if (!report.hasThreats() || report.findings().stream().noneMatch(f -> f.category() == ThreatCategory.NATIVE_LIBRARY_LOAD)) {
             throw new AssertionError("Failed to detect embedded DLL binary: " + report.findings());
         }
-        System.out.println("  ✓ Embedded native executable binary (.dll) detected and blocked");
-    }
-
-    private static void testSystemLoadDetection(Path tempDir) throws Exception {
-        Path loadJar = tempDir.resolve("system-load.jar");
-        byte[] loadClass = createDummyClass(List.of("com/loader/NativeMod", "java/lang/System.loadLibrary"));
-        createJar(loadJar, "com/loader/NativeMod.class", loadClass);
-
-        ScanReport report = JarScanner.scanJar(loadJar);
-        if (!report.hasThreats() || report.findings().get(0).category() != ThreatCategory.NATIVE_LIBRARY_LOAD) {
-            throw new AssertionError("Failed to detect System.loadLibrary call: " + report.findings());
-        }
-        System.out.println("  ✓ Bytecode invocation to System.loadLibrary detected and blocked");
+        System.out.println("  ✓ Suspicious embedded native executable binary (.dll) detected and blocked");
     }
 
     private static byte[] createDummyClass(List<String> utf8Strings) throws IOException {

@@ -23,7 +23,7 @@ import java.util.zip.ZipInputStream;
  * High-performance static scanner that inspects mod jars before execution
  * for Discord webhooks, credential theft targets, shell droppers, and native loaders.
  *
- * Includes automatic Base64 / Hex deobfuscation and Shannon entropy heuristics.
+ * Designed with strict precision to prevent false positives in legitimate modpacks.
  */
 public final class JarScanner {
 
@@ -34,14 +34,17 @@ public final class JarScanner {
             ".dll", ".exe", ".so", ".dylib", ".vbs", ".bat", ".cmd", ".ps1", ".scr", ".pif"
     );
 
-    private static boolean isExecutableEntry(String entryName) {
-        for (String ext : EXECUTABLE_EXTENSIONS) {
-            if (entryName.endsWith(ext)) {
-                return true;
-            }
-        }
-        return false;
-    }
+    // Whitelisted package paths for legitimate library native binaries (e.g. FlatLaf, LWJGL, SQLite, JNA)
+    private static final List<String> LEGITIMATE_NATIVE_PREFIXES = List.of(
+            "com/formdev/flatlaf/",
+            "org/lwjgl/",
+            "org/sqlite/",
+            "com/sun/jna/",
+            "oshi/",
+            "net/java/games/input/",
+            "ca/weblite/objc/",
+            "natives/"
+    );
 
     private static final List<Signature> SIGNATURES = List.of(
             // Webhooks & Exfiltration
@@ -65,16 +68,22 @@ public final class JarScanner {
             new Signature(ThreatCategory.STEALER_TARGET, "XBL3.0"),
             new Signature(ThreatCategory.STEALER_TARGET, "token.dat"),
 
-            // Process Droppers
-            new Signature(ThreatCategory.PROCESS_EXECUTION, "java/lang/ProcessBuilder"),
-            new Signature(ThreatCategory.PROCESS_EXECUTION, "powershell -"),
-            new Signature(ThreatCategory.PROCESS_EXECUTION, "cmd.exe /c"),
-
-            // Native Library & DLL Loaders
-            new Signature(ThreatCategory.NATIVE_LIBRARY_LOAD, "java/lang/System.load"),
-            new Signature(ThreatCategory.NATIVE_LIBRARY_LOAD, "java/lang/System.loadLibrary"),
-            new Signature(ThreatCategory.NATIVE_LIBRARY_LOAD, "java/lang/Runtime.load"),
-            new Signature(ThreatCategory.NATIVE_LIBRARY_LOAD, "java/lang/Runtime.loadLibrary")
+            // Malicious Shell Dropper Commands (specific to droppers, not standard process builders)
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "powershell -enc"),
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "powershell -executionpolicy bypass"),
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "powershell -exec bypass"),
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "powershell -w hidden"),
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "powershell -windowstyle hidden"),
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "powershell -command"),
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "powershell.exe -command"),
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "cmd.exe /c start /b"),
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "cmd.exe /c curl "),
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "cmd.exe /c bitsadmin"),
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "certutil -urlcache"),
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "iex(new-object net.webclient)"),
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "iex (new-object net.webclient)"),
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "/bin/bash -c curl "),
+            new Signature(ThreatCategory.PROCESS_EXECUTION, "/bin/sh -c curl ")
     );
 
     private record Signature(ThreatCategory category, String pattern) {
@@ -129,14 +138,14 @@ public final class JarScanner {
                 String entryName = entry.getName();
                 String lowerEntry = entryName.toLowerCase(Locale.ROOT);
 
-                if (isExecutableEntry(lowerEntry)) {
+                if (isSuspiciousExecutableEntry(entryName, lowerEntry)) {
                     String dedupKey = fileName + "|NATIVE|" + entryName;
                     if (deduplication.add(dedupKey)) {
                         findings.add(new ScanFinding(
                                 entryName,
                                 ThreatCategory.NATIVE_LIBRARY_LOAD,
                                 "Embedded Native / Binary Executable",
-                                "Found embedded executable binary inside jar: " + entryName
+                                "Found suspicious embedded executable binary inside jar: " + entryName
                         ));
                     }
                 }
@@ -155,14 +164,14 @@ public final class JarScanner {
                         while ((nestedEntry = nestedZis.getNextEntry()) != null) {
                             String nestedName = nestedEntry.getName();
                             String lowerNested = nestedName.toLowerCase(Locale.ROOT);
-                            if (isExecutableEntry(lowerNested)) {
+                            if (isSuspiciousExecutableEntry(nestedName, lowerNested)) {
                                 String dedupKey = fileName + "|NATIVE|" + nestedName;
                                 if (deduplication.add(dedupKey)) {
                                     findings.add(new ScanFinding(
                                             entryName + "!" + nestedName,
                                             ThreatCategory.NATIVE_LIBRARY_LOAD,
                                             "Embedded Native / Binary Executable",
-                                            "Found embedded executable binary inside nested jar: " + nestedName
+                                            "Found suspicious embedded executable binary inside nested jar: " + nestedName
                                     ));
                                 }
                             }
@@ -182,6 +191,33 @@ public final class JarScanner {
         return new ScanReport(jarPath, fileName, findings);
     }
 
+    private static boolean isSuspiciousExecutableEntry(String originalName, String lowerEntry) {
+        boolean hasExecutableExt = false;
+        for (String ext : EXECUTABLE_EXTENSIONS) {
+            if (lowerEntry.endsWith(ext)) {
+                hasExecutableExt = true;
+                break;
+            }
+        }
+        if (!hasExecutableExt) {
+            return false;
+        }
+
+        // Whitelist known legitimate vendor libraries
+        for (String legitimatePrefix : LEGITIMATE_NATIVE_PREFIXES) {
+            if (lowerEntry.contains(legitimatePrefix.toLowerCase(Locale.ROOT))) {
+                return false;
+            }
+        }
+
+        // Whitelist standard system native libraries bundled in Fabric/LWJGL jars
+        if (lowerEntry.contains("gpu-detect") || lowerEntry.contains("libglfw") || lowerEntry.contains("openal")) {
+            return false;
+        }
+
+        return true;
+    }
+
     private static void analyzeClassStrings(String className, List<String> strings,
                                             List<ScanFinding> findings, Set<String> deduplication) {
         String formattedClassName = className.replace('/', '.').replace(".class", "");
@@ -199,9 +235,6 @@ public final class JarScanner {
 
             // 3. Hex auto-decoding scan
             checkHexSignatures(formattedClassName, str, findings, deduplication);
-
-            // 4. Shannon Entropy Heuristic (for long, dense encrypted strings)
-            checkHighEntropy(formattedClassName, str, findings, deduplication);
         }
     }
 
@@ -242,24 +275,6 @@ public final class JarScanner {
             String decoded = tryDecodeHex(str);
             if (decoded != null && isPrintableAscii(decoded)) {
                 checkStringSignatures(className, str, decoded, true, findings, deduplication);
-            }
-        }
-    }
-
-    private static void checkHighEntropy(String className, String str,
-                                         List<ScanFinding> findings, Set<String> deduplication) {
-        if (str.length() >= 80 && !str.contains(" ")) {
-            double entropy = calculateShannonEntropy(str);
-            if (entropy >= 4.8) {
-                String dedupKey = className + "|ENTROPY";
-                if (deduplication.add(dedupKey)) {
-                    findings.add(new ScanFinding(
-                            className,
-                            ThreatCategory.OBFUSCATED_PAYLOAD,
-                            "High-Entropy Encrypted String (entropy=" + String.format(Locale.ROOT, "%.2f", entropy) + ")",
-                            truncate(str, 80)
-                    ));
-                }
             }
         }
     }
@@ -306,22 +321,6 @@ public final class JarScanner {
             }
         }
         return (double) printable / s.length() >= 0.85;
-    }
-
-    private static double calculateShannonEntropy(String s) {
-        int[] freq = new int[256];
-        for (int i = 0; i < s.length(); i++) {
-            freq[s.charAt(i) & 0xFF]++;
-        }
-        double entropy = 0;
-        double len = s.length();
-        for (int count : freq) {
-            if (count > 0) {
-                double p = count / len;
-                entropy -= p * (Math.log(p) / Math.log(2));
-            }
-        }
-        return entropy;
     }
 
     private static String truncate(String s, int maxLen) {

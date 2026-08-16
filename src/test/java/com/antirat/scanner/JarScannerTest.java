@@ -60,12 +60,39 @@ class JarScannerTest {
     }
 
     @Test
-    void cleanModJarReportsNoThreats() throws Exception {
+    void cleanModJarWithComplexGenericsReportsNoThreats() throws Exception {
         Path cleanJar = tempDir.resolve("clean-mod.jar");
-        byte[] cleanClass = createDummyClassWithStrings(List.of("com/example/CleanMod", "java/lang/Object", "<init>", "()V"));
+        byte[] cleanClass = createDummyClassWithStrings(List.of(
+                "com/example/CleanMod",
+                "java/lang/Object",
+                "<T:Ljava/lang/Object;>(Lcom/lmax/disruptor/DataProvider<TT;>;Lcom/lmax/disruptor/EventHandler<TT;>;)V",
+                "https?://(www\\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b([-a-zA-Z0-9(...)])",
+                "<init>",
+                "()V"
+        ));
         createJar(cleanJar, "com/example/CleanMod.class", cleanClass);
 
         ScanReport report = JarScanner.scanJar(cleanJar);
+        assertFalse(report.hasThreats());
+        assertTrue(report.findings().isEmpty());
+    }
+
+    @Test
+    void legitimateFlatLafNativesAreNotFalselyFlagged() throws Exception {
+        Path flatLafJar = tempDir.resolve("flatlaf-mod.jar");
+        byte[] dummyClass = createDummyClassWithStrings(List.of("com/formdev/flatlaf/FlatLaf"));
+
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(flatLafJar))) {
+            zos.putNextEntry(new ZipEntry("com/formdev/flatlaf/FlatLaf.class"));
+            zos.write(dummyClass);
+            zos.closeEntry();
+
+            zos.putNextEntry(new ZipEntry("com/formdev/flatlaf/natives/flatlaf-windows-x86_64.dll"));
+            zos.write(new byte[]{0x4D, 0x5A, 0x00, 0x00});
+            zos.closeEntry();
+        }
+
+        ScanReport report = JarScanner.scanJar(flatLafJar);
         assertFalse(report.hasThreats());
         assertTrue(report.findings().isEmpty());
     }
@@ -77,7 +104,7 @@ class JarScannerTest {
                 "com/evil/Stealer",
                 "https://discord.com/api/webhooks/1234567890/token-here",
                 "C:/Users/victim/AppData/Roaming/.minecraft/launcher_accounts.json",
-                "java/lang/ProcessBuilder"
+                "powershell -executionpolicy bypass"
         ));
         createJar(evilJar, "com/evil/Stealer.class", evilClass);
 
@@ -161,7 +188,7 @@ class JarScannerTest {
     }
 
     @Test
-    void detectsEmbeddedDllBinary() throws Exception {
+    void detectsSuspiciousEmbeddedDllBinary() throws Exception {
         Path dllJar = tempDir.resolve("native-dropper.jar");
         byte[] dummyClass = createDummyClassWithStrings(List.of("com/dropper/Main"));
 
@@ -179,16 +206,5 @@ class JarScannerTest {
         assertTrue(report.hasThreats());
         List<ThreatCategory> categories = report.findings().stream().map(ScanFinding::category).toList();
         assertTrue(categories.contains(ThreatCategory.NATIVE_LIBRARY_LOAD));
-    }
-
-    @Test
-    void detectsSystemLoadLibraryCall() throws Exception {
-        Path loadJar = tempDir.resolve("system-load.jar");
-        byte[] loadClass = createDummyClassWithStrings(List.of("com/loader/NativeMod", "java/lang/System.loadLibrary"));
-        createJar(loadJar, "com/loader/NativeMod.class", loadClass);
-
-        ScanReport report = JarScanner.scanJar(loadJar);
-        assertTrue(report.hasThreats());
-        assertEquals(ThreatCategory.NATIVE_LIBRARY_LOAD, report.findings().get(0).category());
     }
 }
