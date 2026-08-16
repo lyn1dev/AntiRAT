@@ -3,34 +3,43 @@ package com.antirat.scanner;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
  * High-performance static scanner that inspects mod jars before execution
  * for Discord webhooks, credential theft targets, shell droppers, and native loaders.
+ *
+ * Includes automatic Base64 / Hex deobfuscation and Shannon entropy heuristics.
  */
 public final class JarScanner {
+
+    private static final Pattern BASE64_PATTERN = Pattern.compile("[A-Za-z0-9+/=]{16,}|[A-Za-z0-9_-]{16,}");
+    private static final Pattern HEX_PATTERN = Pattern.compile("^(?:[0-9a-fA-F]{2}){8,}$");
 
     private static final List<Signature> SIGNATURES = List.of(
             // Webhooks & Exfiltration
             new Signature(ThreatCategory.WEBHOOK_C2, "discord.com/api/webhooks"),
             new Signature(ThreatCategory.WEBHOOK_C2, "discordapp.com/api/webhooks"),
             new Signature(ThreatCategory.WEBHOOK_C2, "api.telegram.org/bot"),
-            new Signature(ThreatCategory.WEBHOOK_C2, "webhook.site/"),
+            new Signature(ThreatCategory.WEBHOOK_C2, "webhook.site"),
             new Signature(ThreatCategory.WEBHOOK_C2, "pastebin.com/raw/"),
             new Signature(ThreatCategory.WEBHOOK_C2, "hastebin.com/raw/"),
-            new Signature(ThreatCategory.WEBHOOK_C2, "transfer.sh/"),
-            new Signature(ThreatCategory.WEBHOOK_C2, "gofile.io/"),
+            new Signature(ThreatCategory.WEBHOOK_C2, "transfer.sh"),
+            new Signature(ThreatCategory.WEBHOOK_C2, "gofile.io"),
             new Signature(ThreatCategory.WEBHOOK_C2, "ngrok-free.app"),
 
             // Stealer Targets
@@ -130,25 +139,144 @@ public final class JarScanner {
 
     private static void analyzeClassStrings(String className, List<String> strings,
                                             List<ScanFinding> findings, Set<String> deduplication) {
+        String formattedClassName = className.replace('/', '.').replace(".class", "");
+
         for (String str : strings) {
             if (str == null || str.length() < 4) {
                 continue;
             }
-            String lower = str.toLowerCase(Locale.ROOT);
-            for (Signature sig : SIGNATURES) {
-                if (lower.contains(sig.pattern.toLowerCase(Locale.ROOT))) {
-                    String dedupKey = className + "|" + sig.category + "|" + str;
-                    if (deduplication.add(dedupKey)) {
-                        findings.add(new ScanFinding(
-                                className.replace('/', '.').replace(".class", ""),
-                                sig.category,
-                                sig.pattern,
-                                truncate(str, 120)
-                        ));
-                    }
+
+            // 1. Direct signature scan
+            checkStringSignatures(formattedClassName, str, str, false, findings, deduplication);
+
+            // 2. Base64 auto-decoding scan
+            checkBase64Signatures(formattedClassName, str, findings, deduplication);
+
+            // 3. Hex auto-decoding scan
+            checkHexSignatures(formattedClassName, str, findings, deduplication);
+
+            // 4. Shannon Entropy Heuristic (for long, dense encrypted strings)
+            checkHighEntropy(formattedClassName, str, findings, deduplication);
+        }
+    }
+
+    private static void checkStringSignatures(String className, String originalStr, String testStr,
+                                              boolean isDecoded, List<ScanFinding> findings, Set<String> deduplication) {
+        String lower = testStr.toLowerCase(Locale.ROOT);
+        for (Signature sig : SIGNATURES) {
+            if (lower.contains(sig.pattern.toLowerCase(Locale.ROOT))) {
+                String dedupKey = className + "|" + sig.category + "|" + originalStr;
+                if (deduplication.add(dedupKey)) {
+                    String prefix = isDecoded ? "[Auto-Decoded: " + truncate(testStr, 60) + "] " : "";
+                    findings.add(new ScanFinding(
+                            className,
+                            sig.category,
+                            sig.pattern,
+                            prefix + truncate(originalStr, 120)
+                    ));
                 }
             }
         }
+    }
+
+    private static void checkBase64Signatures(String className, String str,
+                                              List<ScanFinding> findings, Set<String> deduplication) {
+        Matcher matcher = BASE64_PATTERN.matcher(str);
+        while (matcher.find()) {
+            String candidate = matcher.group();
+            String decoded = tryDecodeBase64(candidate);
+            if (decoded != null && isPrintableAscii(decoded)) {
+                checkStringSignatures(className, str, decoded, true, findings, deduplication);
+            }
+        }
+    }
+
+    private static void checkHexSignatures(String className, String str,
+                                           List<ScanFinding> findings, Set<String> deduplication) {
+        if (HEX_PATTERN.matcher(str).matches()) {
+            String decoded = tryDecodeHex(str);
+            if (decoded != null && isPrintableAscii(decoded)) {
+                checkStringSignatures(className, str, decoded, true, findings, deduplication);
+            }
+        }
+    }
+
+    private static void checkHighEntropy(String className, String str,
+                                         List<ScanFinding> findings, Set<String> deduplication) {
+        if (str.length() >= 80 && !str.contains(" ")) {
+            double entropy = calculateShannonEntropy(str);
+            if (entropy >= 4.8) {
+                String dedupKey = className + "|ENTROPY";
+                if (deduplication.add(dedupKey)) {
+                    findings.add(new ScanFinding(
+                            className,
+                            ThreatCategory.OBFUSCATED_PAYLOAD,
+                            "High-Entropy Encrypted String (entropy=" + String.format(Locale.ROOT, "%.2f", entropy) + ")",
+                            truncate(str, 80)
+                    ));
+                }
+            }
+        }
+    }
+
+    private static String tryDecodeBase64(String s) {
+        try {
+            byte[] bytes = Base64.getDecoder().decode(s);
+            if (bytes.length > 0) {
+                return new String(bytes, StandardCharsets.UTF_8);
+            }
+        } catch (IllegalArgumentException ignored) {}
+
+        try {
+            byte[] bytes = Base64.getUrlDecoder().decode(s);
+            if (bytes.length > 0) {
+                return new String(bytes, StandardCharsets.UTF_8);
+            }
+        } catch (IllegalArgumentException ignored) {}
+
+        return null;
+    }
+
+    private static String tryDecodeHex(String s) {
+        try {
+            int len = s.length();
+            byte[] data = new byte[len / 2];
+            for (int i = 0; i < len; i += 2) {
+                data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4)
+                        + Character.digit(s.charAt(i + 1), 16));
+            }
+            return new String(data, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static boolean isPrintableAscii(String s) {
+        if (s == null || s.isEmpty()) return false;
+        int printable = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= 32 && c < 127) {
+                printable++;
+            }
+        }
+        return (double) printable / s.length() >= 0.85;
+    }
+
+    private static double calculateShannonEntropy(String s) {
+        int[] freq = new int[256];
+        for (int i = 0; i < s.length(); i++) {
+            freq[s.charAt(i) & 0xFF]++;
+        }
+        double entropy = 0;
+        double len = s.length();
+        for (int count : freq) {
+            if (count > 0) {
+                double p = count / len;
+                entropy -= p * (Math.log(p) / Math.log(2));
+            }
+        }
+        return entropy;
     }
 
     private static String truncate(String s, int maxLen) {

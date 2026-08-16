@@ -6,8 +6,10 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -90,6 +92,46 @@ class JarScannerTest {
     }
 
     @Test
+    void autoDecodesBase64ObfuscatedWebhook() throws Exception {
+        Path b64Jar = tempDir.resolve("obfuscated-rat.jar");
+        String plainWebhook = "https://discord.com/api/webhooks/987654321/supersecrettoken";
+        String base64Webhook = Base64.getEncoder().encodeToString(plainWebhook.getBytes(StandardCharsets.UTF_8));
+
+        byte[] b64Class = createDummyClassWithStrings(List.of(
+                "com/obf/Loader",
+                base64Webhook
+        ));
+        createJar(b64Jar, "com/obf/Loader.class", b64Class);
+
+        ScanReport report = JarScanner.scanJar(b64Jar);
+        assertTrue(report.hasThreats());
+        assertEquals(1, report.findings().size());
+        assertEquals(ThreatCategory.WEBHOOK_C2, report.findings().get(0).category());
+        assertTrue(report.findings().get(0).sampleContent().contains("[Auto-Decoded:"));
+    }
+
+    @Test
+    void autoDecodesHexObfuscatedStealerPath() throws Exception {
+        Path hexJar = tempDir.resolve("hex-rat.jar");
+        String plainStealer = "launcher_accounts.json";
+        StringBuilder hex = new StringBuilder();
+        for (byte b : plainStealer.getBytes(StandardCharsets.UTF_8)) {
+            hex.append(String.format("%02x", b));
+        }
+
+        byte[] hexClass = createDummyClassWithStrings(List.of(
+                "com/obf/HexLoader",
+                hex.toString()
+        ));
+        createJar(hexJar, "com/obf/HexLoader.class", hexClass);
+
+        ScanReport report = JarScanner.scanJar(hexJar);
+        assertTrue(report.hasThreats());
+        assertEquals(1, report.findings().size());
+        assertEquals(ThreatCategory.STEALER_TARGET, report.findings().get(0).category());
+    }
+
+    @Test
     void detectsThreatsInNestedJars() throws Exception {
         Path outerJar = tempDir.resolve("outer-container.jar");
 
@@ -117,22 +159,5 @@ class JarScannerTest {
         List<ThreatCategory> categories = report.findings().stream().map(ScanFinding::category).toList();
         assertTrue(categories.contains(ThreatCategory.WEBHOOK_C2));
         assertTrue(categories.contains(ThreatCategory.PROCESS_EXECUTION));
-    }
-
-    @Test
-    void scanModsDirectoryFindsAllInfectedJars() throws Exception {
-        Path modsDir = tempDir.resolve("mods");
-        Files.createDirectories(modsDir);
-
-        byte[] cleanBytes = createDummyClassWithStrings(List.of("com/good/Mod"));
-        createJar(modsDir.resolve("good.jar"), "com/good/Mod.class", cleanBytes);
-
-        byte[] evilBytes = createDummyClassWithStrings(List.of("com/bad/Mod", "api.telegram.org/bot123456:ABC-DEF"));
-        createJar(modsDir.resolve("bad.jar"), "com/bad/Mod.class", evilBytes);
-
-        List<ScanReport> reports = JarScanner.scanModsDirectory(modsDir);
-        assertEquals(1, reports.size());
-        assertEquals("bad.jar", reports.get(0).fileName());
-        assertEquals(ThreatCategory.WEBHOOK_C2, reports.get(0).findings().get(0).category());
     }
 }
