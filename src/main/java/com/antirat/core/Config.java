@@ -19,6 +19,12 @@ public final class Config {
     @SerializedName("whitelistModIds")
     public List<String> whitelistModIds = new ArrayList<>();
 
+    @SerializedName("panicOnThreat")
+    public boolean panicOnThreat = true;
+
+    @SerializedName("scanner")
+    public Scanner scanner = new Scanner();
+
     @SerializedName("quarantine")
     public Quarantine quarantine = new Quarantine();
 
@@ -30,6 +36,11 @@ public final class Config {
 
     @SerializedName("debug")
     public boolean debug = false;
+
+    public static final class Scanner {
+        @SerializedName("enabled")
+        public boolean enabled = true;
+    }
 
     public static final class Quarantine {
         @SerializedName("enabled")
@@ -67,6 +78,9 @@ public final class Config {
             if (parsed != null) {
                 if (parsed.whitelistModIds == null) {
                     parsed.whitelistModIds = new ArrayList<>();
+                }
+                if (parsed.scanner == null) {
+                    parsed.scanner = new Scanner();
                 }
                 if (parsed.quarantine == null) {
                     parsed.quarantine = new Quarantine();

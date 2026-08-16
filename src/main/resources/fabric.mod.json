@@ -9,6 +9,7 @@
   "icon": "assets/antirat/icon.png",
   "environment": "client",
   "entrypoints": {
+    "preLaunch": ["com.antirat.AntiRatPreLaunch"],
     "client": ["com.antirat.AntiRatMod"]
   },
   "mixins": ["antirat.mixins.json"],
